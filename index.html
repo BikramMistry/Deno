@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Chatbot Hacker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body {
+  background: linear-gradient(135deg, #0f172a, #020617);
+}
+.glass {
+  backdrop-filter: blur(16px);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.spinner {
+  border: 4px solid rgba(255,255,255,0.1);
+  border-top: 4px solid #22d3ee;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+</style>
+</head>
+<body class="text-white font-sans">
+
+<div class="max-w-md mx-auto h-screen flex flex-col p-4">
+
+  <!-- Header -->
+  <div class="flex justify-between items-center mb-4">
+    <h1 class="text-xl font-bold tracking-wider">🤖 Chatbot Hacker</h1>
+    <button onclick="openSettings()" class="text-xl">⚙️</button>
+  </div>
+
+  <!-- YouTube Input -->
+  <div class="glass p-3 rounded-2xl mb-3">
+    <input id="youtubeUrl" type="text" placeholder="Paste YouTube URL..."
+      class="w-full bg-transparent outline-none text-sm placeholder-gray-400" />
+    <button onclick="loadVideo()" 
+      class="mt-2 w-full bg-cyan-500 text-black font-semibold py-2 rounded-xl">
+      Load Video
+    </button>
+  </div>
+
+  <!-- Chat Area -->
+  <div id="chatArea" class="flex-1 overflow-y-auto space-y-3 mb-3"></div>
+
+  <!-- Input -->
+  <div class="glass p-3 rounded-2xl flex gap-2">
+    <input id="userInput" type="text" placeholder="Ask about the video..."
+      class="flex-1 bg-transparent outline-none text-sm placeholder-gray-400" />
+    <button onclick="sendMessage()"
+      class="bg-cyan-500 text-black px-4 rounded-xl font-semibold">
+      Send
+    </button>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settingsModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
+  <div class="glass w-full max-w-sm p-4 rounded-2xl">
+    <h2 class="text-lg font-semibold mb-3">Settings</h2>
+
+    <label class="text-sm">OpenRouter API Key</label>
+    <input id="apiKeyInput" type="password"
+      class="w-full bg-black/40 p-2 rounded-lg mb-3 mt-1 outline-none text-sm" />
+
+    <label class="text-sm">Model Name</label>
+    <input id="modelInput" type="text"
+      placeholder="e.g. google/gemini-2.5-flash"
+      class="w-full bg-black/40 p-2 rounded-lg mb-4 mt-1 outline-none text-sm" />
+
+    <div class="flex justify-between">
+      <button onclick="closeSettings()" class="text-gray-400">Cancel</button>
+      <button onclick="saveSettings()"
+        class="bg-cyan-500 text-black px-4 py-1 rounded-lg font-semibold">
+        Save
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let videoContext = "";
+let loadingDiv = null;
+
+function openSettings() {
+  document.getElementById("settingsModal").classList.remove("hidden");
+  document.getElementById("apiKeyInput").value = localStorage.getItem("openrouter_key") || "";
+  document.getElementById("modelInput").value = localStorage.getItem("openrouter_model") || "";
+}
+
+function closeSettings() {
+  document.getElementById("settingsModal").classList.add("hidden");
+}
+
+function saveSettings() {
+  localStorage.setItem("openrouter_key", document.getElementById("apiKeyInput").value);
+  localStorage.setItem("openrouter_model", document.getElementById("modelInput").value);
+  closeSettings();
+}
+
+function showSpinner() {
+  loadingDiv = document.createElement("div");
+  loadingDiv.className = "flex justify-center";
+  loadingDiv.innerHTML = `<div class="spinner"></div>`;
+  document.getElementById("chatArea").appendChild(loadingDiv);
+}
+
+function removeSpinner() {
+  if (loadingDiv) loadingDiv.remove();
+}
+
+function appendMessage(text, isUser = false) {
+  const div = document.createElement("div");
+  div.className = isUser
+    ? "bg-cyan-500 text-black p-3 rounded-2xl self-end max-w-[80%] ml-auto"
+    : "glass p-3 rounded-2xl max-w-[80%]";
+  div.innerText = text;
+  document.getElementById("chatArea").appendChild(div);
+  document.getElementById("chatArea").scrollTop = 999999;
+}
+
+async function loadVideo() {
+  const url = document.getElementById("youtubeUrl").value.trim();
+  if (!url) return alert("Paste YouTube URL");
+
+  appendMessage("Fetching transcript...");
+  showSpinner();
+
+  try {
+    const response = await fetch(`https://r.jina.ai/${url}`);
+    const text = await response.text();
+    videoContext = text;
+    removeSpinner();
+    appendMessage("Transcript loaded successfully.");
+  } catch (err) {
+    removeSpinner();
+    appendMessage("Failed to load transcript.");
+  }
+}
+
+async function sendMessage() {
+  const apiKey = localStorage.getItem("openrouter_key");
+  const model = localStorage.getItem("openrouter_model");
+  if (!apiKey || !model) return alert("Set API Key & Model in Settings.");
+
+  const userText = document.getElementById("userInput").value.trim();
+  if (!userText) return;
+
+  appendMessage(userText, true);
+  document.getElementById("userInput").value = "";
+  showSpinner();
+
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful AI that answers strictly based on the provided video transcript."
+          },
+          {
+            role: "user",
+            content: `Video Transcript:\n${videoContext}\n\nQuestion:\n${userText}`
+          }
+        ]
+      })
+    });
+
+    const data = await response.json();
+    removeSpinner();
+    appendMessage(data.choices[0].message.content);
+
+  } catch (err) {
+    removeSpinner();
+    appendMessage("Error contacting AI.");
+  }
+}
+</script>
+
+</body>
+</html>
